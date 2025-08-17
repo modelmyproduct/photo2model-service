@@ -44,3 +44,16 @@ COPY . /app
 
 # --- Default command (RunPod will override if needed) ---
 CMD ["python3", "app.py"]
+
+# Copy FastAPI app
+COPY app.py /app/app.py
+WORKDIR /app
+
+# Install FastAPI + Uvicorn + SendGrid
+RUN pip install --no-cache-dir fastapi uvicorn python-multipart sendgrid
+
+# Expose port for RunPod
+EXPOSE 8000
+
+# Start server
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
