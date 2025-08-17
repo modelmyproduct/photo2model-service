@@ -31,4 +31,4 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d '{
-              "query": "mutation { podFindAndDeploy(input: { templateId: /dm0rb50ecd, imageName: \"${{ secrets.DOCKER_USERNAME }}/photo2model-service:latest\" }) { id }}"}'
+              "query": "mutation { podFindAndDeploy(input: { templateId: /"dm0rb50ecd/", imageName: \"${{ secrets.DOCKER_USERNAME }}/photo2model-service:latest\" }) { id }}"}'
