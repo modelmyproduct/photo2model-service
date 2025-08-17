@@ -1,59 +1,39 @@
-# Dockerfile
+# Use NVIDIA CUDA base image with Python
 FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 
+# Avoid interactive prompts during package installs
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- Install dependencies ---
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    wget \
-    unzip \
-    ninja-build \
-    libboost-all-dev \
-    libeigen3-dev \
-    libsuitesparse-dev \
-    libfreeimage-dev \
-    libgoogle-glog-dev \
-    libgflags-dev \
-    libglew-dev \
-    qtbase5-dev \
-    libqt5opengl5-dev \
-    libopencv-dev \
-    python3-dev \
-    python3-pip \
+    python3 python3-pip python3-dev python3-venv \
+    build-essential git cmake ninja-build wget unzip \
+    libgl1-mesa-dev libboost-all-dev libeigen3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Build COLMAP ---
-RUN git clone --recursive https://github.com/colmap/colmap.git /opt/colmap && \
-    cd /opt/colmap && \
-    mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja && \
-    ninja && ninja install && \
-    cd / && rm -rf /opt/colmap
+# --- Install COLMAP (prebuilt binaries instead of source build) ---
+RUN wget https://demuc.de/colmap/releases/colmap-3.8-linux.tar.gz && \
+    tar -xvzf colmap-3.8-linux.tar.gz && \
+    mv colmap-3.8-linux /opt/colmap && \
+    ln -s /opt/colmap/bin/colmap /usr/local/bin/colmap && \
+    rm colmap-3.8-linux.tar.gz
 
-# --- Install Python packages ---
-RUN pip3 install --upgrade pip && \
-    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
-    pip3 install "numpy<2" pillow
+# --- Python dependencies ---
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir "numpy<2" torch torchvision torchaudio \
+    Pillow tqdm requests scikit-image opencv-python-headless
 
-# --- Copy app ---
+# --- Clone and install gsplat ---
+RUN git clone https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
+    cd /tmp/gsplat && pip install --no-cache-dir . && \
+    rm -rf /tmp/gsplat
+
+# --- Copy your service code into container ---
 WORKDIR /app
 COPY . /app
 
-# --- Default command (RunPod will override if needed) ---
-CMD ["python3", "app.py"]
+# --- Expose HTTP for RunPod endpoint ---
+EXPOSE 5000
 
-# Copy FastAPI app
-COPY app.py /app/app.py
-WORKDIR /app
-
-# Install FastAPI + Uvicorn + SendGrid
-RUN pip install --no-cache-dir fastapi uvicorn python-multipart sendgrid
-
-# Expose port for RunPod
-EXPOSE 8000
-
-# Start server
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# --- Start API ---
+CMD ["python3", "api.py"]
