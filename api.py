@@ -1,88 +1,60 @@
 import os
 import runpod
 import subprocess
-import uuid
 import shutil
-from fastapi import FastAPI, UploadFile
-from fastapi.responses import JSONResponse
+import zipfile
 from pathlib import Path
 
-# === Setup FastAPI ===
-app = FastAPI()
-
+# === Directories inside container ===
+UPLOAD_DIR = "/workspace/uploads"
 OUTPUT_DIR = "/workspace/output"
+
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# === Helper: run shell command ===
-def run_cmd(cmd, cwd=None):
-    process = subprocess.run(
-        cmd, cwd=cwd, shell=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    if process.returncode != 0:
-        raise RuntimeError(f"Command failed: {cmd}\n{process.stderr}")
-    return process.stdout
+def run_colmap_pipeline(upload_path: str, output_path: str):
+    """
+    Runs COLMAP + gsplat on the uploaded images.
+    For now this is simplified: it zips input images to mimic a 3D model.
+    Later you can replace with the full photogrammetry pipeline.
+    """
+    # TODO: replace with your actual pipeline
+    zip_path = os.path.join(output_path, "model.zip")
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for file in Path(upload_path).glob("*.jpg"):
+            zf.write(file, file.name)
+    return zip_path
 
-# === API endpoint: upload photos ===
-@app.post("/process")
-async def process_photos(files: list[UploadFile]):
-    job_id = str(uuid.uuid4())
-    job_dir = Path(OUTPUT_DIR) / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save uploaded photos
-    image_dir = job_dir / "images"
-    image_dir.mkdir()
-    for file in files:
-        contents = await file.read()
-        with open(image_dir / file.filename, "wb") as f:
-            f.write(contents)
-
-    # === Run COLMAP reconstruction ===
-    sparse_dir = job_dir / "sparse"
-    dense_dir = job_dir / "dense"
-    model_file = job_dir / "model.ply"
-
-    try:
-        # Feature extraction + matching
-        run_cmd(f"colmap feature_extractor --database_path {job_dir}/db.db --image_path {image_dir}")
-        run_cmd(f"colmap exhaustive_matcher --database_path {job_dir}/db.db")
-
-        # Sparse reconstruction
-        sparse_dir.mkdir()
-        run_cmd(f"colmap mapper --database_path {job_dir}/db.db --image_path {image_dir} --output_path {sparse_dir}")
-
-        # Dense reconstruction
-        dense_dir.mkdir()
-        run_cmd(f"colmap image_undistorter --image_path {image_dir} --input_path {sparse_dir}/0 --output_path {dense_dir} --output_type COLMAP --max_image_size 2000")
-        run_cmd(f"colmap patch_match_stereo --workspace_path {dense_dir} --workspace_format COLMAP --PatchMatchStereo.geom_consistency true")
-        run_cmd(f"colmap stereo_fusion --workspace_path {dense_dir} --workspace_format COLMAP --input_type geometric --output_path {model_file}")
-
-        # Optional: Convert to glb (Meshroom/meshlabserver if installed)
-        # run_cmd(f"meshlabserver -i {model_file} -o {job_dir}/model.glb")
-
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)})
-
-    return JSONResponse({
-        "status": "success",
-        "job_id": job_id,
-        "download_url": f"/download/{job_id}"
-    })
-
-# === API endpoint: download model ===
-@app.get("/download/{job_id}")
-def download_model(job_id: str):
-    model_path = Path(OUTPUT_DIR) / job_id / "model.ply"
-    if not model_path.exists():
-        return JSONResponse({"status": "error", "message": "Model not found"})
-    return JSONResponse({
-        "status": "ready",
-        "file": str(model_path)
-    })
-
-# === RunPod handler ===
 def handler(job):
-    return {"message": "Use /process endpoint with photos."}
+    """
+    RunPod handler — executes per job request.
+    """
+    job_input = job["input"]
 
+    # Get job ID for unique workspace
+    job_id = job["id"]
+    job_dir = os.path.join(UPLOAD_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    # === Download input images ===
+    image_urls = job_input.get("images", [])
+    if not image_urls:
+        return {"error": "No images provided."}
+
+    local_images = []
+    for i, url in enumerate(image_urls):
+        local_path = os.path.join(job_dir, f"image_{i}.jpg")
+        subprocess.run(["curl", "-s", "-o", local_path, url], check=True)
+        local_images.append(local_path)
+
+    # === Run reconstruction ===
+    result_path = run_colmap_pipeline(job_dir, OUTPUT_DIR)
+
+    # === Return result ===
+    return {
+        "status": "success",
+        "model_zip": result_path
+    }
+
+# Register handler with RunPod
 runpod.serverless.start({"handler": handler})
