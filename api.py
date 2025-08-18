@@ -1,60 +1,48 @@
 import os
-import runpod
 import subprocess
 import shutil
-import zipfile
-from pathlib import Path
+from flask import Flask, request, jsonify
 
-# === Directories inside container ===
-UPLOAD_DIR = "/workspace/uploads"
-OUTPUT_DIR = "/workspace/output"
+app = Flask(__name__)
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+@app.route("/process", methods=["POST"])
+def process():
+    try:
+        # === 1. Prepare dirs ===
+        input_dir = "/workspace/input"
+        output_dir = "/workspace/output"
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
-def run_colmap_pipeline(upload_path: str, output_path: str):
-    """
-    Runs COLMAP + gsplat on the uploaded images.
-    For now this is simplified: it zips input images to mimic a 3D model.
-    Later you can replace with the full photogrammetry pipeline.
-    """
-    # TODO: replace with your actual pipeline
-    zip_path = os.path.join(output_path, "model.zip")
-    with zipfile.ZipFile(zip_path, "w") as zf:
-        for file in Path(upload_path).glob("*.jpg"):
-            zf.write(file, file.name)
-    return zip_path
+        # Clear old runs
+        shutil.rmtree(input_dir, ignore_errors=True)
+        shutil.rmtree(output_dir, ignore_errors=True)
+        os.makedirs(input_dir)
+        os.makedirs(output_dir)
 
-def handler(job):
-    """
-    RunPod handler — executes per job request.
-    """
-    job_input = job["input"]
+        # === 2. Save uploaded images ===
+        files = request.files.getlist("files")
+        for i, file in enumerate(files):
+            file.save(os.path.join(input_dir, f"img_{i}.jpg"))
 
-    # Get job ID for unique workspace
-    job_id = job["id"]
-    job_dir = os.path.join(UPLOAD_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
+        # === 3. Run COLMAP automatic pipeline ===
+        subprocess.run([
+            "colmap", "automatic_reconstructor",
+            "--image_path", input_dir,
+            "--workspace_path", output_dir,
+            "--dense", "1"
+        ], check=True)
 
-    # === Download input images ===
-    image_urls = job_input.get("images", [])
-    if not image_urls:
-        return {"error": "No images provided."}
+        # === 4. Zip result ===
+        zip_path = "/workspace/model.zip"
+        shutil.make_archive("/workspace/model", "zip", output_dir)
 
-    local_images = []
-    for i, url in enumerate(image_urls):
-        local_path = os.path.join(job_dir, f"image_{i}.jpg")
-        subprocess.run(["curl", "-s", "-o", local_path, url], check=True)
-        local_images.append(local_path)
+        # === 5. Return response ===
+        return jsonify({"status": "success", "result": zip_path})
 
-    # === Run reconstruction ===
-    result_path = run_colmap_pipeline(job_dir, OUTPUT_DIR)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-    # === Return result ===
-    return {
-        "status": "success",
-        "model_zip": result_path
-    }
 
-# Register handler with RunPod
-runpod.serverless.start({"handler": handler})
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
