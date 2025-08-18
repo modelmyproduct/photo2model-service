@@ -1,32 +1,36 @@
-# ===== Base image =====
+# Use NVIDIA base image with CUDA + PyTorch
 FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
 
-# Avoid timezone config hanging during build
+# Avoid interactive timezone prompt
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ===== Install base deps =====
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git wget unzip build-essential ninja-build cmake python3 python3-pip python3-dev \
+    git wget curl unzip build-essential cmake ninja-build \
+    python3 python3-pip python3-dev python3-setuptools \
+    libboost-all-dev libeigen3-dev libfreeimage-dev \
+    libgoogle-glog-dev libgflags-dev libflann-dev \
+    libatlas-base-dev libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ===== Install COLMAP (prebuilt release) =====
-WORKDIR /opt
-RUN wget https://github.com/colmap/colmap/releases/download/3.9/colmap-3.9-linux-cuda11.8.tar.gz && \
-    tar -xvzf colmap-3.9-linux-cuda11.8.tar.gz && \
-    mv colmap-3.9-linux /opt/colmap && \
+# Install COLMAP 3.8 (prebuilt binary)
+RUN wget https://demuc.de/colmap/releases/colmap-3.8-linux.tar.gz && \
+    tar -xvzf colmap-3.8-linux.tar.gz && \
+    mv colmap-3.8-linux /opt/colmap && \
     ln -s /opt/colmap/bin/colmap /usr/local/bin/colmap && \
-    rm colmap-3.9-linux-cuda11.8.tar.gz
+    rm colmap-3.8-linux.tar.gz
 
-# ===== Install Python deps =====
-RUN pip3 install --upgrade pip setuptools wheel
-RUN pip3 install "numpy<2" torch torchvision Pillow flask
+# Upgrade pip + install Python dependencies
+RUN pip3 install --upgrade pip
+RUN pip3 install "numpy<2" torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu118
+RUN pip3 install fastapi uvicorn pillow tqdm scikit-image
 
-# Optional: gsplat if needed
-# RUN git clone https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
-#     pip3 install /tmp/gsplat && rm -rf /tmp/gsplat
+# Copy your app code into container
+WORKDIR /app
+COPY . /app
 
-# ===== Add API script =====
-WORKDIR /workspace
-COPY api.py /workspace/api.py
+# Expose API port
+EXPOSE 8000
 
-CMD ["python3", "api.py"]
+# Run API when container starts
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
