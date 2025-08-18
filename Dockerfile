@@ -1,5 +1,8 @@
-# === Base image with CUDA + PyTorch ===
 FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
+
+# === Prevent interactive prompts ===
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 
 # === System deps ===
 RUN apt-get update && apt-get install -y \
