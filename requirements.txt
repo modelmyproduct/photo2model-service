@@ -7,4 +7,7 @@ torch
 torchvision
 torchaudio
 numpy<2
+<<<<<<< HEAD
 gsplat
+=======
+>>>>>>> c13a868 (Clean Dockerfile, remove gsplat)
