@@ -1,48 +1,52 @@
 import os
-import subprocess
 import shutil
-from flask import Flask, request, jsonify
+import subprocess
+import uuid
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import FileResponse
 
-app = Flask(__name__)
+# Make upload + output dirs
+UPLOAD_DIR = "/app/uploads"
+OUTPUT_DIR = "/app/outputs"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-@app.route("/process", methods=["POST"])
-def process():
+app = FastAPI(title="Photo2Model API")
+
+@app.post("/reconstruct")
+async def reconstruct(files: list[UploadFile] = File(...)):
+    """Takes multiple images -> returns reconstructed 3D model (zip)."""
+
+    # Make unique run folder
+    run_id = str(uuid.uuid4())
+    run_input = os.path.join(UPLOAD_DIR, run_id)
+    run_output = os.path.join(OUTPUT_DIR, run_id)
+    os.makedirs(run_input, exist_ok=True)
+    os.makedirs(run_output, exist_ok=True)
+
+    # Save uploaded files
+    for file in files:
+        file_path = os.path.join(run_input, file.filename)
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+    # Run COLMAP reconstruction
     try:
-        # === 1. Prepare dirs ===
-        input_dir = "/workspace/input"
-        output_dir = "/workspace/output"
-        os.makedirs(input_dir, exist_ok=True)
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Clear old runs
-        shutil.rmtree(input_dir, ignore_errors=True)
-        shutil.rmtree(output_dir, ignore_errors=True)
-        os.makedirs(input_dir)
-        os.makedirs(output_dir)
-
-        # === 2. Save uploaded images ===
-        files = request.files.getlist("files")
-        for i, file in enumerate(files):
-            file.save(os.path.join(input_dir, f"img_{i}.jpg"))
-
-        # === 3. Run COLMAP automatic pipeline ===
-        subprocess.run([
+        subprocess.check_call([
             "colmap", "automatic_reconstructor",
-            "--image_path", input_dir,
-            "--workspace_path", output_dir,
+            "--workspace_path", run_output,
+            "--image_path", run_input,
             "--dense", "1"
-        ], check=True)
+        ])
+    except subprocess.CalledProcessError as e:
+        return {"error": f"COLMAP failed: {str(e)}"}
 
-        # === 4. Zip result ===
-        zip_path = "/workspace/model.zip"
-        shutil.make_archive("/workspace/model", "zip", output_dir)
+    # Zip results
+    zip_path = f"{run_output}.zip"
+    shutil.make_archive(run_output, "zip", run_output)
 
-        # === 5. Return response ===
-        return jsonify({"status": "success", "result": zip_path})
+    return FileResponse(zip_path, media_type="application/zip", filename="model.zip")
 
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+@app.get("/")
+async def root():
+    return {"message": "Photo2Model API is running 🚀"}
