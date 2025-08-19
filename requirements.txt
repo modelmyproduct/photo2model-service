@@ -1,2 +1,10 @@
-runpod
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
 requests
+torch
+torchvision
+torchaudio
+numpy<2
+gsplat
