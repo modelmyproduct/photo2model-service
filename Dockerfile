@@ -1,37 +1,52 @@
-# Use NVIDIA base image with CUDA + PyTorch
-FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
+# === Base image ===
+FROM nvidia/cuda:11.8.0-runtime-ubuntu20.04
 
-# Avoid interactive timezone prompt
+# Avoid timezone & interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git wget curl unzip build-essential cmake ninja-build \
-    python3 python3-pip python3-dev python3-setuptools \
-    libboost-all-dev libeigen3-dev libfreeimage-dev \
-    libgoogle-glog-dev libgflags-dev libflann-dev \
-    libatlas-base-dev libsuitesparse-dev \
-    && rm -rf /var/lib/apt/lists/*
+# === System dependencies ===
+RUN apt-get update && \
+    apt-get install -y \
+    git \
+    wget \
+    curl \
+    unzip \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    python3-dev \
+    ffmpeg \
+    colmap && \
+    rm -rf /var/lib/apt/lists/*
 
-# === Install COLMAP (prebuilt release from GitHub) ===
-RUN apt-get update && apt-get install -y wget && \
-    wget https://github.com/colmap/colmap/releases/download/3.9/colmap-3.9-linux.tar.gz && \
-    tar -xvzf colmap-3.9-linux.tar.gz && \
-    mv colmap-3.9-linux /opt/colmap && \
-    ln -s /opt/colmap/bin/colmap /usr/local/bin/colmap && \
-    rm colmap-3.9-linux.tar.gz
+# === Set Python ===
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Upgrade pip + install Python dependencies
-RUN pip3 install --upgrade pip
-RUN pip3 install "numpy<2" torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu118
-RUN pip3 install fastapi uvicorn pillow tqdm scikit-image
+# === Python dependencies ===
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy your app code into container
+# Pin numpy < 2 because PyTorch / gsplat may break with numpy 2.x
+RUN pip install --no-cache-dir "numpy<2"
+
+# Install PyTorch (CPU for now, can be changed to GPU wheels later)
+RUN pip install --no-cache-dir torch torchvision torchaudio
+
+# === Install gsplat ===
+RUN git clone https://github.com/nerfstudio-project/gsplat.git /tmp/gsplat && \
+    cd /tmp/gsplat && pip install --no-cache-dir . && \
+    rm -rf /tmp/gsplat
+
+# === Copy service code ===
 WORKDIR /app
 COPY . /app
+
+# Install API dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose API port
 EXPOSE 8000
 
-# Run API when container starts
+# Run API with uvicorn
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
