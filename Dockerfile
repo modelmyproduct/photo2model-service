@@ -13,12 +13,13 @@ RUN apt-get update && apt-get install -y \
     libatlas-base-dev libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install COLMAP 3.8 (prebuilt binary)
-RUN wget https://demuc.de/colmap/releases/colmap-3.8-linux.tar.gz && \
-    tar -xvzf colmap-3.8-linux.tar.gz && \
-    mv colmap-3.8-linux /opt/colmap && \
+# === Install COLMAP (prebuilt release from GitHub) ===
+RUN apt-get update && apt-get install -y wget && \
+    wget https://github.com/colmap/colmap/releases/download/3.9/colmap-3.9-linux.tar.gz && \
+    tar -xvzf colmap-3.9-linux.tar.gz && \
+    mv colmap-3.9-linux /opt/colmap && \
     ln -s /opt/colmap/bin/colmap /usr/local/bin/colmap && \
-    rm colmap-3.8-linux.tar.gz
+    rm colmap-3.9-linux.tar.gz
 
 # Upgrade pip + install Python dependencies
 RUN pip3 install --upgrade pip
