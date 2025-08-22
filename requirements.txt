@@ -1,13 +1,8 @@
-fastapi
-uvicorn[standard]
-pydantic
-python-multipart
-requests
-torch
-torchvision
-torchaudio
-numpy<2
-<<<<<<< HEAD
-gsplat
-=======
->>>>>>> c13a868 (Clean Dockerfile, remove gsplat)
+fastapi==0.95.2
+uvicorn[standard]==0.21.1
+python-multipart==0.0.6
+sendgrid==6.11.0
+trimesh==3.22.1
+numpy<2.0
+pillow
+tqdm

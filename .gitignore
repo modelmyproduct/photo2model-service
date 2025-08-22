@@ -1,3 +1,9 @@
-.venv/
 __pycache__/
-workspace/jobs/
+*.pyc
+*.pyo
+/tmp/
+*.zip
+*.part*
+/uploads
+/outputs
+.env

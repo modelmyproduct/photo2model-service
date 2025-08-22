@@ -1,47 +1,25 @@
-# === Base image ===
-FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
+# Lightweight, reliable base so the build won't fail
+FROM python:3.10-slim
 
-# Avoid timezone prompts
 ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-# === System dependencies ===
+# System deps
 RUN apt-get update && apt-get install -y \
-    git wget curl unzip build-essential \
-    cmake ninja-build libboost-all-dev \
-    libeigen3-dev libsuitesparse-dev \
+    build-essential git wget curl unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# === Python setup ===
-RUN apt-get update && apt-get install -y python3 python3-pip && \
-    python3 -m pip install --upgrade pip
+# Copy requirements and install
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel
+RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 
-# === Install COLMAP ===
-RUN apt-get update && apt-get install -y wget cmake ninja-build build-essential git && \
-    ( \
-      echo "🔹 Trying to download prebuilt COLMAP binary..." && \
-      wget -O colmap.tar.gz https://github.com/colmap/colmap/releases/download/3.9/colmap-3.9-linux.tar.gz && \
-      tar -xvzf colmap.tar.gz && \
-      mv colmap-3.9-linux /opt/colmap && \
-      ln -s /opt/colmap/bin/colmap /usr/local/bin/colmap && \
-      rm colmap.tar.gz \
-    ) || ( \
-      echo "⚠️ Prebuilt COLMAP not found, compiling from source..." && \
-      git clone --recursive https://github.com/colmap/colmap.git /opt/colmap && \
-      cd /opt/colmap && mkdir build && cd build && \
-      cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release && \
-      ninja && ninja install \
-    )
+# Copy code
+COPY api.py /app/api.py
+COPY .gitignore /app/.gitignore
 
-# === Python requirements ===
-WORKDIR /app
-COPY requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# === Copy API code ===
-COPY . /app
-
-# === Expose FastAPI port ===
+# Expose for RunPod / testing
 EXPOSE 8000
 
-# === Run the API ===
+# Start the FastAPI server
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
