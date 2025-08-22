@@ -16,7 +16,7 @@ jobs:
         uses: docker/modelmyproduct
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: @5/XKLVhhRAM*TU
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
